@@ -17,8 +17,9 @@ public class Scheduler {
 
     public static final int CYCLE_DAILY = 0;
     public static final int CYCLE_EVERY_N_DAYS = 1;
-    public static final int CYCLE_WEEKDAYS = 2;   // param = битовая маска дней недели (Пн=1 ... Вс=64)
-    public static final int CYCLE_COURSE = 3;     // param = длительность курса в днях от startDate
+    public static final int CYCLE_WEEKDAYS = 2;    // param = битовая маска дней (Пн=1 ... Вс=64)
+    public static final int CYCLE_COURSE = 3;      // param = длительность курса в днях от startDate
+    public static final int CYCLE_EVERY_N_HOURS = 4; // param = интервал в часах от времени первого приёма
 
     public static void schedule(Context ctx, JSONObject r) {
         long next = nextTrigger(r, System.currentTimeMillis());
@@ -59,6 +60,20 @@ public class Scheduler {
         int type = r.optInt("cycle", CYCLE_DAILY);
         int param = r.optInt("param", 0);
         long startDate = r.optLong("startDate", from);
+
+        // Каждые N часов: фаза задаётся временем первого приёма (hour:minute)
+        if (type == CYCLE_EVERY_N_HOURS) {
+            int n = Math.max(1, param);
+            Calendar a = Calendar.getInstance();
+            a.setTimeInMillis(from);
+            a.set(Calendar.HOUR_OF_DAY, hour);
+            a.set(Calendar.MINUTE, minute);
+            a.set(Calendar.SECOND, 0);
+            a.set(Calendar.MILLISECOND, 0);
+            while (a.getTimeInMillis() > from) a.add(Calendar.HOUR_OF_DAY, -n);
+            while (a.getTimeInMillis() <= from) a.add(Calendar.HOUR_OF_DAY, n);
+            return a.getTimeInMillis();
+        }
 
         Calendar base = Calendar.getInstance();
         base.setTimeInMillis(from);
@@ -101,7 +116,6 @@ public class Scheduler {
     }
 
     private static int weekdayBit(Calendar c) {
-        // Calendar: Вс=1..Сб=7 → биты Пн=1(0), Вт=2(1) ... Вс=64(6)
         int dow = c.get(Calendar.DAY_OF_WEEK);
         int idx = (dow + 5) % 7;
         return 1 << idx;
