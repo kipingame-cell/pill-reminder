@@ -7,21 +7,22 @@ import android.app.TimePickerDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.InputType;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
-import android.widget.ListView;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -40,16 +41,20 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
 
-    private static final int BG = Color.rgb(16, 18, 22);
-    private static final int CARD = Color.rgb(28, 31, 38);
-    private static final int ACCENT = Color.rgb(94, 196, 150);
-    private static final int FG = Color.rgb(232, 234, 238);
-    private static final int DIM = Color.rgb(140, 145, 155);
+    private static final int BG      = Color.rgb(14, 17, 22);
+    private static final int CARD    = Color.rgb(26, 31, 39);
+    private static final int CARD2   = Color.rgb(35, 42, 53);
+    private static final int ACCENT  = Color.rgb(94, 196, 150);
+    private static final int ACCENT2 = Color.rgb(108, 140, 255);
+    private static final int FG      = Color.rgb(232, 234, 238);
+    private static final int DIM     = Color.rgb(138, 143, 155);
+    private static final int DANGER  = Color.rgb(229, 115, 115);
 
     private Store store;
-    private FrameLayout content;
-    private final Button[] tabs = new Button[4];
-    private static final String[] TAB_NAMES = {"Таблетки", "Напоминания", "Календарь", "Статистика"};
+    private LinearLayout content;
+    private final TextView[] navBtns = new TextView[4];
+    private static final String[] NAV = {"Таблетки", "Напоминания", "Календарь", "Статистика"};
+    private int currentTab = 0;
 
     private static final int REQ_CUSTOM_SOUND = 42;
     private String pendingSoundRef = null;
@@ -57,8 +62,13 @@ public class MainActivity extends Activity {
     private int[] pendingReminder;
     private String pendingPill;
 
-    private final SimpleDateFormat dayFmt = new SimpleDateFormat("d MMMM, EEEE", new Locale("ru"));
+    private final Calendar calMonth = Calendar.getInstance(); // отображаемый месяц
+    private String selectedDayKey = null;
+
+    private final SimpleDateFormat dayKeyFmt = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+    private final SimpleDateFormat monthFmt = new SimpleDateFormat("LLLL yyyy", new Locale("ru"));
     private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm", Locale.getDefault());
+    private final SimpleDateFormat fullDayFmt = new SimpleDateFormat("d MMMM, EEEE", new Locale("ru"));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -68,36 +78,42 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
-        int pad = dp(14);
-        root.setPadding(pad, dp(36), pad, pad);
 
-        LinearLayout tabRow = new LinearLayout(this);
-        tabRow.setOrientation(LinearLayout.HORIZONTAL);
-        for (int i = 0; i < 4; i++) {
-            final int idx = i;
-            Button b = new Button(this);
-            b.setText(TAB_NAMES[i]);
-            b.setAllCaps(false);
-            b.setTextSize(13);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-            lp.setMargins(dp(3), 0, dp(3), 0);
-            b.setLayoutParams(lp);
-            b.setOnClickListener(v -> showTab(idx));
-            tabs[i] = b;
-            tabRow.addView(b);
-        }
-        root.addView(tabRow);
-
-        content = new FrameLayout(this);
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        clp.topMargin = dp(12);
-        content.setLayoutParams(clp);
+        content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         root.addView(content);
 
-        setContentView(root);
+        // Нижняя навигация
+        LinearLayout nav = new LinearLayout(this);
+        nav.setOrientation(LinearLayout.HORIZONTAL);
+        nav.setGravity(Gravity.CENTER);
+        nav.setPadding(dp(10), dp(8), dp(10), dp(14));
+        GradientDrawable navBg = new GradientDrawable();
+        navBg.setColor(CARD);
+        nav.setBackground(navBg);
+        for (int i = 0; i < 4; i++) {
+            final int idx = i;
+            TextView t = new TextView(this);
+            t.setText(NAV[i]);
+            t.setTextSize(12);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(8), 0, dp(8));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lp.setMargins(dp(3), 0, dp(3), 0);
+            t.setLayoutParams(lp);
+            t.setOnClickListener(v -> showTab(idx));
+            navBtns[i] = t;
+            nav.addView(t);
+        }
+        root.addView(nav);
 
+        setContentView(root);
         requestPermissionsIfNeeded();
+
+        Calendar now = Calendar.getInstance();
+        selectedDayKey = dayKeyFmt.format(now.getTime());
         showTab(0);
     }
 
@@ -115,8 +131,25 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ================= КАРКАС =================
+
     private void showTab(int idx) {
-        for (int i = 0; i < 4; i++) styleTab(tabs[i], i == idx);
+        currentTab = idx;
+        for (int i = 0; i < 4; i++) {
+            TextView t = navBtns[i];
+            if (i == idx) {
+                GradientDrawable d = new GradientDrawable();
+                d.setColor(CARD2);
+                d.setCornerRadius(dp(12));
+                t.setBackground(d);
+                t.setTextColor(ACCENT);
+                t.setTypeface(Typeface.DEFAULT_BOLD);
+            } else {
+                t.setBackground(null);
+                t.setTextColor(DIM);
+                t.setTypeface(Typeface.DEFAULT);
+            }
+        }
         content.removeAllViews();
         switch (idx) {
             case 0: showPills(); break;
@@ -126,65 +159,138 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void styleTab(Button b, boolean active) {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(active ? ACCENT : CARD);
-        d.setCornerRadius(dp(10));
-        b.setBackground(d);
-        b.setTextColor(active ? Color.rgb(10, 12, 14) : FG);
+    private LinearLayout page(String title, String subtitle) {
+        ScrollView sv = new ScrollView(this);
+        sv.setFillViewport(true);
+        LinearLayout lay = new LinearLayout(this);
+        lay.setOrientation(LinearLayout.VERTICAL);
+        lay.setPadding(dp(18), dp(34), dp(18), dp(16));
+
+        TextView h = new TextView(this);
+        h.setText(title);
+        h.setTextColor(FG);
+        h.setTextSize(24);
+        h.setTypeface(Typeface.DEFAULT_BOLD);
+        lay.addView(h);
+
+        if (subtitle != null) {
+            TextView s = dimText(subtitle, 13);
+            s.setPadding(0, dp(2), 0, dp(12));
+            lay.addView(s);
+        } else {
+            h.setPadding(0, 0, 0, dp(12));
+        }
+        sv.addView(lay);
+        content.addView(sv);
+        return lay;
     }
 
     // ================= ТАБЛЕТКИ =================
 
     private void showPills() {
-        LinearLayout lay = vbox();
+        LinearLayout lay = page("Мои таблетки", "Тап по карточке — действия. Всё хранится на устройстве.");
 
-        LinearLayout inputRow = new LinearLayout(this);
-        inputRow.setOrientation(LinearLayout.HORIZONTAL);
+        // Поле добавления
+        LinearLayout addCard = card();
+        addCard.setGravity(Gravity.CENTER_VERTICAL);
         final EditText et = new EditText(this);
-        et.setHint("Название таблетки");
+        et.setHint("Название новой таблетки");
         et.setTextColor(FG);
         et.setHintTextColor(DIM);
-        et.setBackground(cardBg());
-        et.setPadding(dp(12), 0, dp(12), 0);
-        et.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 1f));
-        inputRow.addView(et);
+        et.setBackground(null);
+        et.setSingleLine(true);
+        et.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        addCard.addView(et);
 
-        Button add = accentButton("+");
-        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(dp(56), dp(48));
-        alp.leftMargin = dp(8);
-        add.setLayoutParams(alp);
-        add.setOnClickListener(v -> {
+        TextView plus = new TextView(this);
+        plus.setText("+");
+        plus.setTextColor(Color.rgb(10, 12, 14));
+        plus.setTextSize(24);
+        plus.setTypeface(Typeface.DEFAULT_BOLD);
+        plus.setGravity(Gravity.CENTER);
+        GradientDrawable pd = new GradientDrawable();
+        pd.setColor(ACCENT);
+        pd.setCornerRadius(dp(12));
+        plus.setBackground(pd);
+        LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(dp(46), dp(46));
+        plp.leftMargin = dp(10);
+        plus.setLayoutParams(plp);
+        plus.setOnClickListener(v -> {
             String name = et.getText().toString().trim();
             if (name.isEmpty()) return;
             store.addPill(name);
             et.setText("");
             showTab(0);
         });
-        inputRow.addView(add);
-        lay.addView(inputRow);
+        addCard.addView(plus);
+        lay.addView(addCard);
 
-        TextView hint = dimText("Нажми на таблетку — создать напоминание. Долгое нажатие — удалить.");
-        hint.setPadding(0, dp(10), 0, dp(6));
-        lay.addView(hint);
+        List<String> pills = store.getPills();
+        if (pills.isEmpty()) {
+            TextView empty = dimText("Пока пусто — добавь первую таблетку выше.", 14);
+            empty.setPadding(dp(4), dp(14), 0, 0);
+            lay.addView(empty);
+        }
 
-        ListView lv = new ListView(this);
-        lv.setDivider(null);
-        lv.setDividerHeight(dp(8));
-        final List<String> pills = store.getPills();
-        lv.setAdapter(stringAdapter(pills));
-        lv.setOnItemClickListener((p, v, pos, id) -> reminderWizard(pills.get(pos)));
-        lv.setOnItemLongClickListener((p, v, pos, id) -> {
-            new AlertDialog.Builder(this)
-                    .setTitle("Удалить «" + pills.get(pos) + "»?")
-                    .setPositiveButton("Удалить", (d, w) -> { store.removePill(pills.get(pos)); showTab(0); })
-                    .setNegativeButton("Отмена", null)
-                    .show();
-            return true;
-        });
-        lay.addView(lv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(lay);
+        for (final String pill : pills) {
+            LinearLayout c = card();
+            c.setGravity(Gravity.CENTER_VERTICAL);
+
+            LinearLayout texts = new LinearLayout(this);
+            texts.setOrientation(LinearLayout.VERTICAL);
+            texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            TextView name = new TextView(this);
+            name.setText(pill);
+            name.setTextColor(FG);
+            name.setTextSize(17);
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            texts.addView(name);
+            int remCount = countRemindersFor(pill);
+            TextView sub = dimText(remCount == 0 ? "нет напоминаний" : "напоминаний: " + remCount, 12);
+            sub.setPadding(0, dp(2), 0, 0);
+            texts.addView(sub);
+            c.addView(texts);
+
+            TextView arrow = new TextView(this);
+            arrow.setText("›");
+            arrow.setTextColor(DIM);
+            arrow.setTextSize(24);
+            c.addView(arrow);
+
+            c.setOnClickListener(v -> pillActions(pill));
+            lay.addView(c);
+        }
+    }
+
+    private int countRemindersFor(String pill) {
+        int n = 0;
+        JSONArray a = store.getReminders();
+        for (int i = 0; i < a.length(); i++) {
+            JSONObject r = a.optJSONObject(i);
+            if (r != null && pill.equals(r.optString("pill"))) n++;
+        }
+        return n;
+    }
+
+    private void pillActions(final String pill) {
+        String[] actions = {"Создать напоминание", "Записать приём сейчас", "Удалить таблетку"};
+        new AlertDialog.Builder(this)
+                .setTitle(pill)
+                .setItems(actions, (d, which) -> {
+                    if (which == 0) reminderWizard(pill);
+                    else if (which == 1) {
+                        store.logTaken(pill, System.currentTimeMillis());
+                        Toast.makeText(this, "Записано: " + timeFmt.format(new Date()), Toast.LENGTH_SHORT).show();
+                    } else {
+                        new AlertDialog.Builder(this)
+                                .setTitle("Удалить «" + pill + "»?")
+                                .setMessage("Напоминания с этим названием останутся активными.")
+                                .setPositiveButton("Удалить", (dd, w) -> { store.removePill(pill); showTab(0); })
+                                .setNegativeButton("Отмена", null)
+                                .show();
+                    }
+                })
+                .show();
     }
 
     // ================= МАСТЕР НАПОМИНАНИЯ =================
@@ -195,18 +301,19 @@ public class MainActivity extends Activity {
                 now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE), true).show();
     }
 
-    private void pickCycle(String pill, int hour, int minute) {
-        String[] types = {"Каждый день", "Каждые N дней", "По дням недели", "Курсом N дней"};
+    private void pickCycle(final String pill, final int hour, final int minute) {
+        String[] types = {"Каждый день", "Каждые N часов", "Каждые N дней", "По дням недели", "Курсом N дней"};
         new AlertDialog.Builder(this)
-                .setTitle("Цикличность")
+                .setTitle("Как часто?")
                 .setItems(types, (d, which) -> {
                     switch (which) {
                         case 0: pickSound(pill, hour, minute, Scheduler.CYCLE_DAILY, 0); break;
-                        case 1: askNumber("Через сколько дней?", "2", n ->
+                        case 1: askHours(n -> pickSound(pill, hour, minute, Scheduler.CYCLE_EVERY_N_HOURS, n)); break;
+                        case 2: askNumber("Через сколько дней?", "2", n ->
                                 pickSound(pill, hour, minute, Scheduler.CYCLE_EVERY_N_DAYS, n)); break;
-                        case 2: askWeekdays(mask ->
+                        case 3: askWeekdays(mask ->
                                 pickSound(pill, hour, minute, Scheduler.CYCLE_WEEKDAYS, mask)); break;
-                        case 3: askNumber("Длительность курса (дней)", "7", n ->
+                        case 4: askNumber("Длительность курса (дней)", "7", n ->
                                 pickSound(pill, hour, minute, Scheduler.CYCLE_COURSE, n)); break;
                     }
                 })
@@ -216,10 +323,29 @@ public class MainActivity extends Activity {
 
     private interface IntCb { void on(int v); }
 
+    private void askHours(IntCb cb) {
+        final int[] values = {1, 2, 3, 4, 6, 8, 12};
+        String[] labels = new String[values.length];
+        for (int i = 0; i < values.length; i++) labels[i] = hoursStr(values[i]);
+        new AlertDialog.Builder(this)
+                .setTitle("Интервал")
+                .setItems(labels, (d, which) -> cb.on(values[which]))
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private static String hoursStr(int n) {
+        if (n == 1) return "Каждый час";
+        if (n >= 2 && n <= 4) return "Каждые " + n + " часа";
+        return "Каждые " + n + " часов";
+    }
+
     private void askNumber(String title, String def, IntCb cb) {
         final EditText et = new EditText(this);
         et.setInputType(InputType.TYPE_CLASS_NUMBER);
         et.setText(def);
+        int p = dp(16);
+        et.setPadding(p, p, p, p);
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setView(et)
@@ -319,6 +445,7 @@ public class MainActivity extends Activity {
             r.put("id", id);
             Scheduler.schedule(this, r);
             Toast.makeText(this, "Напоминание создано", Toast.LENGTH_SHORT).show();
+            if (currentTab == 1) showTab(1);
         } catch (JSONException ignored) {}
         pendingSoundRef = null;
         pendingSoundName = null;
@@ -327,41 +454,74 @@ public class MainActivity extends Activity {
     // ================= НАПОМИНАНИЯ =================
 
     private void showReminders() {
-        LinearLayout lay = vbox();
-        lay.addView(dimText("Нажми — вкл/выкл. Долгое нажатие — удалить."));
-
-        ListView lv = new ListView(this);
-        lv.setDivider(null);
-        lv.setDividerHeight(dp(8));
+        LinearLayout lay = page("Напоминания", "Свайп не нужен: переключатель — вкл/выкл, ✕ — удалить.");
 
         JSONArray a = store.getReminders();
-        final List<JSONObject> items = new ArrayList<>();
-        List<String> rows = new ArrayList<>();
+        List<JSONObject> items = new ArrayList<>();
         for (int i = 0; i < a.length(); i++) {
             JSONObject r = a.optJSONObject(i);
-            if (r == null) continue;
-            items.add(r);
-            rows.add(describeReminder(r));
+            if (r != null) items.add(r);
         }
-        if (rows.isEmpty()) rows.add("Пока пусто. Добавь таблетку и создай напоминание.");
+        if (items.isEmpty()) {
+            TextView empty = dimText("Пока пусто. Зайди во вкладку «Таблетки», тапни по таблетке и создай напоминание.", 14);
+            empty.setPadding(dp(4), dp(10), 0, 0);
+            lay.addView(empty);
+            return;
+        }
 
-        lv.setAdapter(stringAdapter(rows));
-        lv.setOnItemClickListener((p, v, pos, id) -> {
-            if (pos >= items.size()) return;
-            JSONObject r = items.get(pos);
-            try {
-                boolean active = !r.optBoolean("active", true);
-                store.updateReminder(r.getLong("id"), "active", active);
-                r.put("active", active);
-                if (active) Scheduler.schedule(this, r);
-                else Scheduler.cancel(this, r);
-            } catch (JSONException ignored) {}
-            showTab(1);
-        });
-        lv.setOnItemLongClickListener((p, v, pos, id) -> {
-            if (pos >= items.size()) return true;
-            final JSONObject r = items.get(pos);
-            new AlertDialog.Builder(this)
+        for (final JSONObject r : items) {
+            LinearLayout c = card();
+            c.setGravity(Gravity.CENTER_VERTICAL);
+
+            LinearLayout texts = new LinearLayout(this);
+            texts.setOrientation(LinearLayout.VERTICAL);
+            texts.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+            TextView time = new TextView(this);
+            time.setText(String.format(Locale.getDefault(), "%02d:%02d", r.optInt("hour"), r.optInt("minute")));
+            time.setTextColor(r.optBoolean("active", true) ? ACCENT : DIM);
+            time.setTextSize(26);
+            time.setTypeface(Typeface.DEFAULT_BOLD);
+            texts.addView(time);
+
+            TextView pill = new TextView(this);
+            pill.setText(r.optString("pill"));
+            pill.setTextColor(FG);
+            pill.setTextSize(16);
+            pill.setPadding(0, dp(2), 0, dp(4));
+            texts.addView(pill);
+
+            LinearLayout chips = new LinearLayout(this);
+            chips.setOrientation(LinearLayout.HORIZONTAL);
+            chips.addView(chip(cycleStr(r)));
+            String snd = r.optString("soundName", "");
+            if (!snd.isEmpty()) {
+                TextView sc = chip(snd);
+                ((LinearLayout.LayoutParams) sc.getLayoutParams()).leftMargin = dp(6);
+                chips.addView(sc);
+            }
+            texts.addView(chips);
+            c.addView(texts);
+
+            final Switch sw = new Switch(this);
+            sw.setChecked(r.optBoolean("active", true));
+            sw.setOnCheckedChangeListener((btn, on) -> {
+                try {
+                    store.updateReminder(r.getLong("id"), "active", on);
+                    r.put("active", on);
+                    if (on) Scheduler.schedule(this, r);
+                    else Scheduler.cancel(this, r);
+                    time.setTextColor(on ? ACCENT : DIM);
+                } catch (JSONException ignored) {}
+            });
+            c.addView(sw);
+
+            TextView del = new TextView(this);
+            del.setText("✕");
+            del.setTextColor(DANGER);
+            del.setTextSize(18);
+            del.setPadding(dp(12), dp(6), dp(2), dp(6));
+            del.setOnClickListener(v -> new AlertDialog.Builder(this)
                     .setTitle("Удалить напоминание?")
                     .setPositiveButton("Удалить", (d, w) -> {
                         Scheduler.cancel(this, r);
@@ -369,31 +529,28 @@ public class MainActivity extends Activity {
                         showTab(1);
                     })
                     .setNegativeButton("Отмена", null)
-                    .show();
-            return true;
-        });
-        lay.addView(lv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(lay);
+                    .show());
+            c.addView(del);
+
+            lay.addView(c);
+        }
     }
 
-    private String describeReminder(JSONObject r) {
-        String time = String.format(Locale.getDefault(), "%02d:%02d",
-                r.optInt("hour"), r.optInt("minute"));
-        String cycle;
+    private String cycleStr(JSONObject r) {
         switch (r.optInt("cycle")) {
+            case Scheduler.CYCLE_EVERY_N_HOURS: {
+                int n = Math.max(1, r.optInt("param", 1));
+                return hoursStr(n).toLowerCase(Locale.ROOT);
+            }
             case Scheduler.CYCLE_EVERY_N_DAYS:
-                cycle = "каждые " + r.optInt("param") + " дн."; break;
+                return "каждые " + r.optInt("param") + " дн.";
             case Scheduler.CYCLE_WEEKDAYS:
-                cycle = weekdaysStr(r.optInt("param")); break;
+                return weekdaysStr(r.optInt("param"));
             case Scheduler.CYCLE_COURSE:
-                cycle = "курс " + r.optInt("param") + " дн."; break;
+                return "курс " + r.optInt("param") + " дн.";
             default:
-                cycle = "каждый день";
+                return "каждый день";
         }
-        String state = r.optBoolean("active", true) ? "●" : "○";
-        String sound = r.optString("soundName", "по умолчанию");
-        return state + "  " + r.optString("pill") + " — " + time + "\n" + cycle + " · звук: " + sound;
     }
 
     private String weekdaysStr(int mask) {
@@ -409,40 +566,163 @@ public class MainActivity extends Activity {
     // ================= КАЛЕНДАРЬ =================
 
     private void showCalendar() {
-        LinearLayout lay = vbox();
-        ListView lv = new ListView(this);
-        lv.setDivider(null);
-        lv.setDividerHeight(dp(8));
+        LinearLayout lay = page("Календарь", null);
 
+        // Записи по дням
+        Map<String, List<JSONObject>> byDay = new LinkedHashMap<>();
         JSONArray log = store.getLog();
-        Map<String, List<String>> byDay = new LinkedHashMap<>();
-        for (int i = log.length() - 1; i >= 0; i--) {
+        for (int i = 0; i < log.length(); i++) {
             JSONObject o = log.optJSONObject(i);
             if (o == null) continue;
-            long t = o.optLong("time");
-            String day = dayFmt.format(new Date(t));
-            if (!byDay.containsKey(day)) byDay.put(day, new ArrayList<String>());
-            byDay.get(day).add(timeFmt.format(new Date(t)) + " — " + o.optString("pill"));
+            String key = dayKeyFmt.format(new Date(o.optLong("time")));
+            if (!byDay.containsKey(key)) byDay.put(key, new ArrayList<JSONObject>());
+            byDay.get(key).add(o);
         }
-        List<String> rows = new ArrayList<>();
-        for (Map.Entry<String, List<String>> e : byDay.entrySet()) {
-            StringBuilder sb = new StringBuilder(e.getKey());
-            for (String s : e.getValue()) sb.append("\n   ").append(s);
-            rows.add(sb.toString());
-        }
-        if (rows.isEmpty()) rows.add("Журнал пуст. Отмечай приём кнопкой «Принял» в уведомлении.");
 
-        lv.setAdapter(stringAdapter(rows));
-        lay.addView(lv, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        content.addView(lay);
+        // Шапка: месяц + стрелки
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView prev = navArrow("‹");
+        TextView next = navArrow("›");
+        final TextView monthLabel = new TextView(this);
+        monthLabel.setTextColor(FG);
+        monthLabel.setTextSize(17);
+        monthLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        monthLabel.setGravity(Gravity.CENTER);
+        monthLabel.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        String m = monthFmt.format(calMonth.getTime());
+        monthLabel.setText(m.substring(0, 1).toUpperCase(new Locale("ru")) + m.substring(1));
+        prev.setOnClickListener(v -> { calMonth.add(Calendar.MONTH, -1); showTab(2); });
+        next.setOnClickListener(v -> { calMonth.add(Calendar.MONTH, 1); showTab(2); });
+        head.addView(prev);
+        head.addView(monthLabel);
+        head.addView(next);
+        lay.addView(head);
+
+        // Дни недели
+        String[] wd = {"Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"};
+        LinearLayout wdRow = new LinearLayout(this);
+        wdRow.setPadding(0, dp(10), 0, dp(4));
+        for (String d : wd) {
+            TextView t = dimText(d, 12);
+            t.setGravity(Gravity.CENTER);
+            t.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            wdRow.addView(t);
+        }
+        lay.addView(wdRow);
+
+        // Сетка месяца
+        Calendar first = (Calendar) calMonth.clone();
+        first.set(Calendar.DAY_OF_MONTH, 1);
+        int offset = (first.get(Calendar.DAY_OF_WEEK) + 5) % 7;
+        int daysInMonth = first.getActualMaximum(Calendar.DAY_OF_MONTH);
+        String todayKey = dayKeyFmt.format(new Date());
+
+        int day = 1;
+        for (int row = 0; row < 6 && day <= daysInMonth + offset; row++) {
+            LinearLayout rowLay = new LinearLayout(this);
+            for (int col = 0; col < 7; col++) {
+                int cellIndex = row * 7 + col;
+                final TextView cell = new TextView(this);
+                cell.setGravity(Gravity.CENTER);
+                cell.setTextSize(14);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+                lp.setMargins(dp(2), dp(2), dp(2), dp(2));
+                cell.setLayoutParams(lp);
+
+                if (cellIndex >= offset && day <= daysInMonth) {
+                    final int thisDay = day;
+                    Calendar c = (Calendar) first.clone();
+                    c.set(Calendar.DAY_OF_MONTH, thisDay);
+                    final String key = dayKeyFmt.format(c.getTime());
+
+                    cell.setText(String.valueOf(thisDay));
+                    boolean hasEntries = byDay.containsKey(key);
+                    boolean isSelected = key.equals(selectedDayKey);
+                    boolean isToday = key.equals(todayKey);
+
+                    GradientDrawable bgd = new GradientDrawable();
+                    bgd.setCornerRadius(dp(10));
+                    if (isSelected) {
+                        bgd.setColor(CARD2);
+                        bgd.setStroke(dp(1), ACCENT);
+                    } else if (hasEntries) {
+                        bgd.setColor(CARD2);
+                    } else {
+                        bgd.setColor(Color.TRANSPARENT);
+                    }
+                    cell.setBackground(bgd);
+                    cell.setTextColor(hasEntries ? ACCENT : (isToday ? ACCENT2 : FG));
+                    if (hasEntries || isToday) cell.setTypeface(Typeface.DEFAULT_BOLD);
+
+                    cell.setOnClickListener(v -> {
+                        selectedDayKey = key;
+                        showTab(2);
+                    });
+                    day++;
+                }
+                rowLay.addView(cell);
+            }
+            lay.addView(rowLay);
+        }
+
+        // Записи выбранного дня
+        LinearLayout dayCard = card();
+        dayCard.setOrientation(LinearLayout.VERTICAL);
+        TextView dayTitle = new TextView(this);
+        String dt = "Записи за " + fullDayFmt.format(parseDayKey(selectedDayKey));
+        dayTitle.setText(dt);
+        dayTitle.setTextColor(FG);
+        dayTitle.setTextSize(15);
+        dayTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        dayCard.addView(dayTitle);
+
+        List<JSONObject> entries = byDay.get(selectedDayKey);
+        if (entries == null || entries.isEmpty()) {
+            TextView none = dimText("В этот день приёмов не записано.", 13);
+            none.setPadding(0, dp(8), 0, 0);
+            dayCard.addView(none);
+        } else {
+            for (JSONObject o : entries) {
+                LinearLayout row = new LinearLayout(this);
+                row.setPadding(0, dp(8), 0, 0);
+                TextView t = new TextView(this);
+                t.setText(timeFmt.format(new Date(o.optLong("time"))));
+                t.setTextColor(ACCENT);
+                t.setTextSize(14);
+                t.setTypeface(Typeface.DEFAULT_BOLD);
+                t.setLayoutParams(new LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.WRAP_CONTENT));
+                row.addView(t);
+                TextView p = new TextView(this);
+                p.setText(o.optString("pill"));
+                p.setTextColor(FG);
+                p.setTextSize(14);
+                row.addView(p);
+                dayCard.addView(row);
+            }
+        }
+        lay.addView(dayCard);
+    }
+
+    private Date parseDayKey(String key) {
+        try { return dayKeyFmt.parse(key); } catch (Exception e) { return new Date(); }
+    }
+
+    private TextView navArrow(String s) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(ACCENT);
+        t.setTextSize(26);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(14), 0, dp(14), 0);
+        return t;
     }
 
     // ================= СТАТИСТИКА =================
 
     private void showStats() {
-        ScrollView sv = new ScrollView(this);
-        LinearLayout lay = vbox();
+        LinearLayout lay = page("Статистика", null);
 
         JSONArray log = store.getLog();
         Map<String, Integer> perPill = new LinkedHashMap<>();
@@ -466,21 +746,69 @@ public class MainActivity extends Activity {
             if (days < 30) last30++;
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("Всего приёмов: ").append(log.length()).append("\n\n");
-        sb.append("За 7 дней: ").append(last7).append("\n");
-        sb.append("За 30 дней: ").append(last30).append("\n\n");
-        sb.append("По таблеткам:\n");
-        if (perPill.isEmpty()) sb.append("  пока нет данных\n");
+        // Три мини-карточки
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.addView(statCard(String.valueOf(log.length()), "всего"));
+        row.addView(statCard(String.valueOf(last7), "за 7 дней"));
+        row.addView(statCard(String.valueOf(last30), "за 30 дней"));
+        lay.addView(row);
+
+        if (perPill.isEmpty()) {
+            TextView empty = dimText("Данных пока нет — статистика появится после первых отметок «Принял».", 14);
+            empty.setPadding(dp(4), dp(14), 0, 0);
+            lay.addView(empty);
+            return;
+        }
+
+        int max = 1;
+        for (int v : perPill.values()) max = Math.max(max, v);
+
+        TextView sect = dimText("ПО ТАБЛЕТКАМ", 11);
+        sect.setPadding(dp(4), dp(18), 0, dp(6));
+        lay.addView(sect);
+
         for (Map.Entry<String, Integer> e : perPill.entrySet()) {
+            LinearLayout c = card();
+            c.setOrientation(LinearLayout.VERTICAL);
+
+            LinearLayout top = new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView name = new TextView(this);
+            name.setText(e.getKey());
+            name.setTextColor(FG);
+            name.setTextSize(15);
+            name.setTypeface(Typeface.DEFAULT_BOLD);
+            name.setLayoutParams(new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+            top.addView(name);
+
             List<Integer> mins = minutesByPill.get(e.getKey());
             int avg = 0;
-            for (int m : mins) avg += m;
+            for (int mm : mins) avg += mm;
             avg /= Math.max(1, mins.size());
-            sb.append("  ").append(e.getKey()).append(": ").append(e.getValue())
-                    .append(" раз, среднее время ")
-                    .append(String.format(Locale.getDefault(), "%02d:%02d", avg / 60, avg % 60))
-                    .append("\n");
+            TextView info = dimText(e.getValue() + " раз · ср. " +
+                    String.format(Locale.getDefault(), "%02d:%02d", avg / 60, avg % 60), 12);
+            top.addView(info);
+            c.addView(top);
+
+            // Бар
+            LinearLayout bar = new LinearLayout(this);
+            bar.setPadding(0, dp(8), 0, 0);
+            View fill = new View(this);
+            GradientDrawable fd = new GradientDrawable();
+            fd.setColor(ACCENT);
+            fd.setCornerRadius(dp(4));
+            fill.setBackground(fd);
+            bar.addView(fill, new LinearLayout.LayoutParams(0, dp(8), (float) e.getValue() / max));
+            View rest = new View(this);
+            GradientDrawable rd = new GradientDrawable();
+            rd.setColor(CARD2);
+            rd.setCornerRadius(dp(4));
+            rest.setBackground(rd);
+            bar.addView(rest, new LinearLayout.LayoutParams(0, dp(8), 1f - (float) e.getValue() / max));
+            c.addView(bar);
+
+            lay.addView(c);
         }
 
         int active = 0;
@@ -489,67 +817,70 @@ public class MainActivity extends Activity {
             JSONObject r = rems.optJSONObject(i);
             if (r != null && r.optBoolean("active", true)) active++;
         }
-        sb.append("\nАктивных напоминаний: ").append(active);
+        TextView foot = dimText("Активных напоминаний: " + active, 13);
+        foot.setPadding(dp(4), dp(14), 0, 0);
+        lay.addView(foot);
+    }
 
-        TextView tv = new TextView(this);
-        tv.setText(sb.toString());
-        tv.setTextColor(FG);
-        tv.setTextSize(16);
-        tv.setLineSpacing(0, 1.25f);
-        tv.setPadding(dp(6), dp(6), dp(6), dp(6));
-        lay.addView(tv);
-        sv.addView(lay);
-        content.addView(sv);
+    private View statCard(String value, String label) {
+        LinearLayout c = card();
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lp.setMargins(dp(4), dp(4), dp(4), dp(4));
+        c.setLayoutParams(lp);
+
+        TextView v = new TextView(this);
+        v.setText(value);
+        v.setTextColor(ACCENT);
+        v.setTextSize(24);
+        v.setTypeface(Typeface.DEFAULT_BOLD);
+        v.setGravity(Gravity.CENTER);
+        c.addView(v);
+        TextView l = dimText(label, 12);
+        l.setGravity(Gravity.CENTER);
+        c.addView(l);
+        return c;
     }
 
     // ================= UI helpers =================
 
-    private LinearLayout vbox() {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        return l;
-    }
-
-    private ArrayAdapter<String> stringAdapter(List<String> items) {
-        return new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, items) {
-            @Override
-            public View getView(int pos, View convert, ViewGroup parent) {
-                View v = super.getView(pos, convert, parent);
-                TextView tv = (TextView) v;
-                tv.setTextColor(FG);
-                tv.setBackground(cardBg());
-                tv.setPadding(dp(14), dp(12), dp(14), dp(12));
-                tv.setTextSize(15);
-                return v;
-            }
-        };
-    }
-
-    private Button accentButton(String text) {
-        Button b = new Button(this);
-        b.setText(text);
-        b.setTextColor(Color.rgb(10, 12, 14));
-        b.setTextSize(20);
+    private LinearLayout card() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(LinearLayout.HORIZONTAL);
+        c.setPadding(dp(14), dp(12), dp(14), dp(12));
         GradientDrawable d = new GradientDrawable();
-        d.setColor(ACCENT);
-        d.setCornerRadius(dp(10));
-        b.setBackground(d);
-        return b;
+        d.setColor(CARD);
+        d.setCornerRadius(dp(14));
+        c.setBackground(d);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(5), 0, dp(5));
+        c.setLayoutParams(lp);
+        return c;
     }
 
-    private TextView dimText(String s) {
+    private TextView chip(String text) {
         TextView t = new TextView(this);
-        t.setText(s);
+        t.setText(text);
         t.setTextColor(DIM);
-        t.setTextSize(12);
+        t.setTextSize(11);
+        t.setPadding(dp(8), dp(3), dp(8), dp(3));
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(CARD2);
+        d.setCornerRadius(dp(8));
+        t.setBackground(d);
+        t.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return t;
     }
 
-    private GradientDrawable cardBg() {
-        GradientDrawable d = new GradientDrawable();
-        d.setColor(CARD);
-        d.setCornerRadius(dp(10));
-        return d;
+    private TextView dimText(String s, int sp) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(DIM);
+        t.setTextSize(sp);
+        return t;
     }
 
     private int dp(int v) {
